@@ -36,6 +36,12 @@ module Databasedotcom
     attr_accessor :ca_file
     # The SSL verify mode configured for this instance, if any
     attr_accessor :verify_mode
+    # The HTTP proxy host to connect through, if any
+    attr_accessor :proxy
+    # The username to use when connecting through an HTTP proxy, if any
+    attr_accessor :proxy_username
+    # The password to use when connecting through an HTTP proxy, if any
+    attr_accessor :proxy_password
 
     # Returns a new client object. _options_ can be one of the following
     #
@@ -49,6 +55,9 @@ module Databasedotcom
     #    sobject_module: My::Module
     #    ca_file: some/ca/file.cert
     #    verify_mode: OpenSSL::SSL::VERIFY_PEER
+    #    proxy: http://web-proxy.example.com
+    #    proxy_username: someuser
+    #    proxy_password: password
     # * A Hash containing the following keys:
     #    client_id
     #    client_secret
@@ -58,9 +67,12 @@ module Databasedotcom
     #    sobject_module
     #    ca_file
     #    verify_mode
+    #    proxy
+    #    proxy_username
+    #    proxy_password
     # If the environment variables DATABASEDOTCOM_CLIENT_ID, DATABASEDOTCOM_CLIENT_SECRET, DATABASEDOTCOM_HOST,
-    # DATABASEDOTCOM_DEBUGGING, DATABASEDOTCOM_VERSION, DATABASEDOTCOM_SOBJECT_MODULE, DATABASEDOTCOM_CA_FILE, and/or 
-    # DATABASEDOTCOM_VERIFY_MODE are present, they override any other values provided
+    # DATABASEDOTCOM_DEBUGGING, DATABASEDOTCOM_VERSION, DATABASEDOTCOM_SOBJECT_MODULE, DATABASEDOTCOM_CA_FILE, 
+    # DATABASEDOTCOM_VERIFY_MODE and/or HTTP_PROXY are present, they override any other values provided
     def initialize(options = {})
       if options.is_a?(String)
         @options = YAML.load_file(options)
@@ -91,6 +103,9 @@ module Databasedotcom
       self.ca_file = ENV['DATABASEDOTCOM_CA_FILE'] || @options[:ca_file]
       self.verify_mode = ENV['DATABASEDOTCOM_VERIFY_MODE'] || @options[:verify_mode]
       self.verify_mode = self.verify_mode.to_i if self.verify_mode
+      self.proxy = ENV['HTTP_PROXY'] || @options[:proxy]
+      self.proxy_username = @options[:proxy_username]
+      self.proxy_password = @options[:proxy_password]
   end
 
     # Authenticate to the Force.com API.  _options_ is a Hash, interpreted as follows:
@@ -380,7 +395,20 @@ module Databasedotcom
     end
 
     def https_request(host=nil)
-      Net::HTTP.new(host || URI.parse(self.instance_url).host, 443).tap do |http| 
+
+      if self.proxy
+        proxy_uri = URI(self.proxy)
+        proxy_host, proxy_port = proxy_uri.host, proxy_uri.port
+      else
+        proxy_host = proxy_port = nil
+      end
+
+      Net::HTTP.new(host || URI.parse(self.instance_url).host,
+                    443,
+                    proxy_host,
+                    proxy_port,
+                    proxy_username,
+                    proxy_password).tap do |http| 
         http.use_ssl = true 
         http.ca_file = self.ca_file if self.ca_file
         http.verify_mode = self.verify_mode if self.verify_mode
